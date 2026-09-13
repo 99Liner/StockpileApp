@@ -5,23 +5,17 @@ export default function TabLayout() {
     <Tabs>
       <Tabs.Screen
         name="index"
-        options={{
-          title: 'Stockpile',
-        }}
+        options={{ title: 'Stockpile' }}
       />
 
       <Tabs.Screen
         name="scan"
-        options={{
-          title: 'Scan',
-        }}
+        options={{ title: 'Scan' }}
       />
 
       <Tabs.Screen
         name="prices"
-        options={{
-          title: 'Prices',
-        }}
+        options={{ title: 'Prices' }}
       />
     </Tabs>
   );

@@ -46,6 +46,17 @@ export default function ScanScreen() {
   const [regularPrice, setRegularPrice] = useState('');
   const [paidPrice, setPaidPrice] = useState('');
   const [expirationDate, setExpirationDate] = useState('');
+  const [purchaseDate, setPurchaseDate] =
+    useState(
+      new Date().toISOString().split('T')[0]
+    );
+
+  {/*Manual input for items*/}
+  const [manualName, setManualName] = useState('');
+  const [manualBrand, setManualBrand] = useState('');
+  const [manualCategory, setManualCategory] = useState('');
+  const [manualSize, setManualSize] = useState('');
+  const [manualUnit, setManualUnit] = useState('');
 
   if (!permission) {
     return (
@@ -77,17 +88,80 @@ export default function ScanScreen() {
       return;
     }
 
+    const scannedBarcode = result.data;
+
     setScanned(true);
-    setBarcode(result.data);
+    setBarcode(scannedBarcode);
     setLoading(true);
     setNotFound(false);
     setProduct(null);
 
-    console.log('Looking up:', result.data);
+    console.log('Looking up:', scannedBarcode);
 
     try {
+      // STEP 1:
+      // Check our own SQLite database first.
+      const localProduct =
+        await db.getFirstAsync<{
+          barcode: string;
+          name: string;
+          brand: string | null;
+          category: string | null;
+          size_amount: number | null;
+          size_unit: string | null;
+        }>(
+          `
+          SELECT
+            barcode,
+            name,
+            brand,
+            category,
+            size_amount,
+            size_unit
+          FROM products
+          WHERE barcode = ?
+          `,
+          scannedBarcode
+        );
+
+      if (localProduct) {
+        console.log(
+          'Product found locally:',
+          localProduct.name
+        );
+
+        const savedProduct: ProductLookup = {
+          barcode: localProduct.barcode,
+          name: localProduct.name,
+          brand: localProduct.brand ?? '',
+          category: localProduct.category ?? '',
+
+          quantity:
+            localProduct.size_amount !== null &&
+            localProduct.size_unit
+              ? `${localProduct.size_amount} ${localProduct.size_unit}`
+              : '',
+
+          sizeAmount:
+            localProduct.size_amount,
+
+          sizeUnit:
+            localProduct.size_unit ?? '',
+        };
+
+        setProduct(savedProduct);
+
+        return;
+      }
+
+      // STEP 2:
+      // We don't know it yet, so search online.
+      console.log(
+        'Not in local database. Checking product API...'
+      );
+
       const foundProduct =
-        await lookupProduct(result.data);
+        await lookupProduct(scannedBarcode);
 
       if (foundProduct) {
         setProduct(foundProduct);
@@ -262,6 +336,15 @@ export default function ScanScreen() {
     setRegularPrice('');
     setPaidPrice('');
     setExpirationDate('');
+    setPurchaseDate(
+      new Date().toISOString().split('T')[0]
+    );
+
+    setManualName('');
+    setManualBrand('');
+    setManualCategory('');
+    setManualSize('');
+    setManualUnit('');
   }
 
   const regular =
@@ -283,6 +366,51 @@ export default function ScanScreen() {
     regularTotal > 0
       ? (savings / regularTotal) * 100
       : 0;
+
+function continueWithManualProduct() {
+  if (!manualName.trim()) {
+    Alert.alert(
+      'Product Name Required',
+      'Enter a name for this product.'
+    );
+    return;
+  }
+
+  const parsedSize =
+    manualSize.trim() === ''
+      ? null
+      : Number.parseFloat(manualSize);
+
+  if (
+    manualSize.trim() !== '' &&
+    Number.isNaN(parsedSize)
+  ) {
+    Alert.alert(
+      'Invalid Size',
+      'Enter a valid package size.'
+    );
+    return;
+  }
+
+  const manualProduct: ProductLookup = {
+    barcode,
+    name: manualName.trim(),
+    brand: manualBrand.trim(),
+    category: manualCategory.trim(),
+
+    quantity:
+      parsedSize !== null && manualUnit.trim()
+        ? `${parsedSize} ${manualUnit.trim()}`
+        : '',
+
+    sizeAmount: parsedSize,
+    sizeUnit: manualUnit.trim(),
+  };
+
+  setProduct(manualProduct);
+  setNotFound(false);
+}
+
 
   return (
     <View style={styles.container}>
@@ -425,7 +553,16 @@ export default function ScanScreen() {
             value={paidPrice}
             onChangeText={setPaidPrice}
           />
+          <Text style={styles.label}>
+            Purchase Date
+          </Text>
 
+          <TextInput
+            style={styles.input}
+            value={purchaseDate}
+            onChangeText={setPurchaseDate}
+            placeholder="YYYY-MM-DD"
+          />
           <Text style={styles.label}>
             Expiration Date
           </Text>
@@ -481,24 +618,96 @@ export default function ScanScreen() {
       )}
 
       {!loading && notFound && (
-        <View style={styles.centerWhite}>
+        <ScrollView
+          style={styles.form}
+          contentContainerStyle={styles.formContent}
+        >
           <Text style={styles.notFound}>
             Product Not Found
           </Text>
 
           <Text style={styles.barcode}>
-            {barcode}
+            UPC: {barcode}
           </Text>
 
           <Text style={styles.notFoundMessage}>
-            Manual product entry will be added next.
+            Enter the product information manually.
+            It will be saved so you won't need to
+            enter it again next time.
           </Text>
 
-          <Button
-            title="Scan Another"
-            onPress={scanAgain}
+          <Text style={styles.label}>
+            Product Name *
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Tide Original"
+            value={manualName}
+            onChangeText={setManualName}
           />
-        </View>
+
+          <Text style={styles.label}>
+            Brand
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Tide"
+            value={manualBrand}
+            onChangeText={setManualBrand}
+          />
+
+          <Text style={styles.label}>
+            Category
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Laundry, Personal Care..."
+            value={manualCategory}
+            onChangeText={setManualCategory}
+          />
+
+          <Text style={styles.label}>
+            Package Size
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="92"
+            keyboardType="decimal-pad"
+            value={manualSize}
+            onChangeText={setManualSize}
+          />
+
+          <Text style={styles.label}>
+            Unit
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="fl oz, oz, count, rolls..."
+            value={manualUnit}
+            onChangeText={setManualUnit}
+          />
+
+          <View style={{ marginTop: 25 }}>
+            <Button
+              title="Continue to Purchase"
+              onPress={continueWithManualProduct}
+            />
+          </View>
+
+          <View style={{ marginTop: 12 }}>
+            <Button
+              title="Scan Another Product"
+              onPress={scanAgain}
+            />
+          </View>
+
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
       )}
     </View>
   );

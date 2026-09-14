@@ -169,6 +169,57 @@ export default function ProductDetailScreen() {
     );
   }
 
+  async function useOne() {
+    const batch =
+        await db.getFirstAsync<{
+        id: number;
+        quantity_remaining: number;
+        }>(
+        `
+        SELECT
+            id,
+            quantity_remaining
+        FROM purchases
+        WHERE
+            product_id = ?
+            AND quantity_remaining > 0
+
+        ORDER BY
+            CASE
+            WHEN expiration_date IS NULL THEN 1
+            ELSE 0
+            END,
+            expiration_date ASC,
+            purchase_date ASC,
+            id ASC
+
+        LIMIT 1
+        `,
+        productId
+        );
+
+    if (!batch) {
+        Alert.alert(
+        'Out of Stock',
+        'There are no remaining items for this product.'
+        );
+
+        return;
+    }
+
+    await db.runAsync(
+        `
+        UPDATE purchases
+        SET quantity_remaining = quantity_remaining - 1
+        WHERE id = ?
+        `,
+        batch.id
+    );
+
+    await loadData();
+    }
+
+
   return (
     <ScrollView
       style={styles.container}
@@ -181,6 +232,29 @@ export default function ProductDetailScreen() {
       <Text style={styles.barcode}>
         UPC: {product.barcode}
       </Text>
+
+      <View style={{ marginTop: 15, marginBottom: 10 }}>
+        <Button
+          title="Use One"
+          onPress={useOne}
+        />
+      </View>
+
+      <View style={{ marginBottom: 20 }}>
+        <Button
+            title="Add Purchase"
+            onPress={() =>
+            router.push({
+                pathname:
+                '/add-purchase/[productId]',
+                params: {
+                productId:
+                    productId.toString(),
+                },
+            })
+            }
+        />
+        </View>
 
       <Text style={styles.sectionTitle}>
         Product Information

@@ -20,6 +20,13 @@ type StockItem = {
   nextExpiration: string | null;
 };
 
+type ExpiringItem = {
+  purchaseId: number;
+  productName: string;
+  quantity: number;
+  expirationDate: string;
+};
+
 export default function StockpileScreen() {
   const db = useSQLiteContext();
 
@@ -27,6 +34,9 @@ export default function StockpileScreen() {
 
   const [items, setItems] =
     useState<StockItem[]>([]);
+
+  const [expiringItems, setExpiringItems] =
+    useState<ExpiringItem[]>([]);
 
   async function loadItems() {
     const results =
@@ -50,6 +60,32 @@ export default function StockpileScreen() {
       `);
 
     setItems(results);
+
+    const expiring =
+      await db.getAllAsync<ExpiringItem>(`
+        SELECT
+          purchases.id AS purchaseId,
+          products.name AS productName,
+          purchases.quantity_remaining AS quantity,
+          purchases.expiration_date AS expirationDate
+
+        FROM purchases
+
+        JOIN products
+          ON products.id = purchases.product_id
+
+        WHERE
+          purchases.quantity_remaining > 0
+          AND purchases.expiration_date IS NOT NULL
+          AND date(purchases.expiration_date) >= date('now')
+          AND date(purchases.expiration_date)
+            <= date('now', '+30 days')
+
+        ORDER BY
+          purchases.expiration_date ASC
+      `);
+
+    setExpiringItems(expiring);
   }
 
   useFocusEffect(
@@ -68,49 +104,78 @@ export default function StockpileScreen() {
         {items.length} products
       </Text>
 
-      {items.length === 0 ? (
-        <Text style={styles.empty}>
-          Your stockpile is empty.
-          Scan something to get started.
+    {/* Expiring items section */}
+    {expiringItems.length > 0 && (
+      <View style={styles.expiringSection}>
+        <Text style={styles.expiringTitle}>
+          Expiring Soon
         </Text>
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(item) =>
-            item.id.toString()
-          }
 
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.item}
-              onPress={() =>
-                router.push({
-                  pathname: '/product/[id]',
-                  params: { id: item.id.toString() },
-                })
-              }
-            >
-            
-              <Text style={styles.itemName}>
-                {item.name}
+        {expiringItems.map((item) => (
+          <View
+            key={item.purchaseId}
+            style={styles.expiringItem}
+          >
+            <Text style={styles.expiringName}>
+              {item.productName}
+            </Text>
+
+            <Text>
+              Qty: {item.quantity}
+            </Text>
+
+            <Text>
+              Expires: {item.expirationDate}
+            </Text>
+          </View>
+        ))}
+      </View>
+    )}
+
+  {/* Normal stockpile list */}
+    {items.length === 0 ? (
+      <Text style={styles.empty}>
+        Your stockpile is empty.
+        Scan something to get started.
+      </Text>
+    ) : (
+      <FlatList
+        data={items}
+        keyExtractor={(item) =>
+          item.id.toString()
+        }
+
+        renderItem={({ item }) => (
+          <Pressable
+            style={styles.item}
+            onPress={() =>
+              router.push({
+                pathname: '/product/[id]',
+                params: { id: item.id.toString() },
+              })
+            }
+          >
+          
+            <Text style={styles.itemName}>
+              {item.name}
+            </Text>
+
+            {item.brand && (
+              <Text>
+                {item.brand}
               </Text>
+            )}
 
-              {item.brand && (
-                <Text>
-                  {item.brand}
-                </Text>
-              )}
+            <Text style={styles.quantity}>
+              In stock: {item.quantity}
+            </Text>
 
-              <Text style={styles.quantity}>
-                In stock: {item.quantity}
+            {item.nextExpiration && (
+              <Text>
+                Next expiration:{' '}
+                {item.nextExpiration}
               </Text>
-
-              {item.nextExpiration && (
-                <Text>
-                  Next expiration:{' '}
-                  {item.nextExpiration}
-                </Text>
-              )}
+            )}
             </Pressable>
           )}
         />
@@ -159,4 +224,28 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: '600',
   },
+
+  expiringSection: {
+  marginBottom: 25,
+  padding: 15,
+  borderWidth: 1,
+  borderColor: '#ddd',
+  borderRadius: 10,
+},
+
+expiringTitle: {
+  fontSize: 20,
+  fontWeight: 'bold',
+  marginBottom: 10,
+},
+
+expiringItem: {
+  paddingVertical: 8,
+  borderBottomWidth: 1,
+  borderBottomColor: '#eee',
+},
+
+expiringName: {
+  fontWeight: '600',
+},
 });

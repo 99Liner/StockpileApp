@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable } from 'react-native';
 
 import {
+  Button,
   FlatList,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -103,6 +104,15 @@ export default function StockpileScreen() {
       <Text style={styles.subtitle}>
         {items.length} products
       </Text>
+
+      <View style={{ marginBottom: 20 }}>
+        <Button
+          title="Manage Folders"
+          onPress={() =>
+            router.push('/folders')
+          }
+        />
+      </View>
 
     {/* Expiring items section */}
     {expiringItems.length > 0 && (

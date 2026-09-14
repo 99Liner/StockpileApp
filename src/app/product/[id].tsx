@@ -29,6 +29,12 @@ type Product = {
   category: string | null;
   size_amount: number | null;
   size_unit: string | null;
+  folder_id: number | null;
+};
+
+type Folder = {
+  id: number;
+  name: string;
 };
 
 type Purchase = {
@@ -60,6 +66,14 @@ export default function ProductDetailScreen() {
   const [name, setName] = useState('');
   const [brand, setBrand] = useState('');
 
+  const [folders, setFolders] =
+  useState<Folder[]>([]);
+
+  const [
+    selectedFolderId,
+    setSelectedFolderId,
+  ] = useState<number | null>(null);
+
   async function loadData() {
     const foundProduct =
       await db.getFirstAsync<Product>(
@@ -79,6 +93,16 @@ export default function ProductDetailScreen() {
 
     setName(foundProduct.name);
     setBrand(foundProduct.brand ?? '');
+    setSelectedFolderId(foundProduct.folder_id);
+
+    const folderRows =
+      await db.getAllAsync<Folder>(`
+        SELECT id, name
+        FROM folders
+        ORDER BY name COLLATE NOCASE
+      `);
+
+    setFolders(folderRows);
 
     const purchaseRows =
       await db.getAllAsync<Purchase>(
@@ -111,16 +135,18 @@ export default function ProductDetailScreen() {
     }
 
     await db.runAsync(
-      `
+       `
       UPDATE products
       SET
         name = ?,
-        brand = ?
-      WHERE id = ?
-      `,
-      name.trim(),
-      brand.trim(),
-      productId
+        brand = ?,
+        folder_id = ?
+        WHERE id = ?
+        `,
+        name.trim(),
+        brand.trim(),
+        selectedFolderId,
+        productId
     );
 
     Alert.alert(
@@ -280,6 +306,44 @@ export default function ProductDetailScreen() {
         onChangeText={setBrand}
       />
 
+      <Text style={styles.label}>
+        Folder
+      </Text>
+
+      <View style={styles.folderOptions}>
+        <Button
+          title={
+          selectedFolderId === null
+            ? '✓ Unfiled'
+            : 'Unfiled'
+          }
+          onPress={() =>
+          setSelectedFolderId(null)
+        }
+        />
+
+        {folders.map((folder) => (
+          <View
+            key={folder.id}
+            style={styles.folderButton}
+          >
+          <Button
+            title={
+            selectedFolderId === folder.id
+              ? `✓ ${folder.name}`
+              : folder.name
+            }
+            onPress={() =>
+              setSelectedFolderId(
+                folder.id
+              )
+            }
+          />
+          </View>
+        ))}
+    </View>
+
+
       {product.size_amount !== null && (
         <Text style={styles.sizeText}>
           Size: {product.size_amount}{' '}
@@ -431,6 +495,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 16,
     marginBottom: 12,
+  },
+
+  folderOptions: {
+    marginTop: 5,
+    marginBottom: 15,
+  },
+
+  folderButton: {
+    marginTop: 8,
   },
 
   store: {

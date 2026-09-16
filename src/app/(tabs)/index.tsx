@@ -1,13 +1,18 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
+import ActionButton from '../../components/ActionButton';
+import { exportStockpileCsv } from '../../services/exportCsv';
 
 import {
+  Alert,
   Button,
   FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
+  TextInput,
+  View
 } from 'react-native';
 
 import { useFocusEffect } from 'expo-router';
@@ -19,6 +24,7 @@ type StockItem = {
   brand: string | null;
   quantity: number;
   nextExpiration: string | null;
+  folderId: number | null;
 };
 
 type ExpiringItem = {
@@ -26,6 +32,11 @@ type ExpiringItem = {
   productName: string;
   quantity: number;
   expirationDate: string;
+};
+
+type Folder = {
+  id: number;
+  name: string;
 };
 
 export default function StockpileScreen() {
@@ -39,6 +50,20 @@ export default function StockpileScreen() {
   const [expiringItems, setExpiringItems] =
     useState<ExpiringItem[]>([]);
 
+  const [folders, setFolders] =
+    useState<Folder[]>([]);
+
+  const [search, setSearch] =
+    useState('');
+
+  const [
+    selectedFolder,
+    setSelectedFolder,
+] =
+  useState<
+    'all' | 'unfiled' | number
+  >('all');
+
   async function loadItems() {
     const results =
       await db.getAllAsync<StockItem>(`
@@ -46,18 +71,26 @@ export default function StockpileScreen() {
           products.id,
           products.name,
           products.brand,
+          products.folder_id AS folderId,
+
           SUM(
             purchases.quantity_remaining
           ) AS quantity,
+          
           MIN(
             purchases.expiration_date
           ) AS nextExpiration
+        
         FROM products
+
         JOIN purchases
           ON purchases.product_id = products.id
+
         WHERE purchases.quantity_remaining > 0
         GROUP BY products.id
-        ORDER BY products.name
+
+        ORDER BY
+          products.name COLLATE NOCASE
       `);
 
     setItems(results);
@@ -87,6 +120,15 @@ export default function StockpileScreen() {
       `);
 
     setExpiringItems(expiring);
+  
+    const folderRows =
+    await db.getAllAsync<Folder>(`
+      SELECT id, name
+      FROM folders
+      ORDER BY name COLLATE NOCASE
+    `);
+    setFolders(folderRows);
+  
   }
 
   useFocusEffect(
@@ -94,6 +136,61 @@ export default function StockpileScreen() {
       loadItems();
     }, [])
   );
+
+  async function handleExport() {
+  try {
+    await exportStockpileCsv(db);
+  } catch (error) {
+    console.error(
+      'EXPORT ERROR:',
+      error
+    );
+
+    Alert.alert(
+      'Export Failed',
+      'The CSV file could not be exported.'
+    );
+  }
+}
+
+  const filteredItems =
+  items.filter((item) => {
+    const matchesSearch =
+      item.name
+        .toLowerCase()
+        .includes(
+          search.toLowerCase()
+        ) ||
+      (item.brand ?? '')
+        .toLowerCase()
+        .includes(
+          search.toLowerCase()
+        );
+
+    let matchesFolder = true;
+
+    if (
+      selectedFolder ===
+      'unfiled'
+    ) {
+      matchesFolder =
+        item.folderId === null;
+    }
+
+    if (
+      typeof selectedFolder ===
+      'number'
+    ) {
+      matchesFolder =
+        item.folderId ===
+        selectedFolder;
+    }
+
+    return (
+      matchesSearch &&
+      matchesFolder
+    );
+  });
 
   return (
     <View style={styles.container}>
@@ -105,6 +202,91 @@ export default function StockpileScreen() {
         {items.length} products
       </Text>
 
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search products..."
+        value={search}
+        onChangeText={setSearch}
+      />
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.folderScroll}
+        contentContainerStyle={styles.folderRow}
+      >
+        <Pressable
+          style={[
+            styles.folderChip,
+            selectedFolder === 'all' &&
+              styles.selectedFolderChip,
+          ]}
+          onPress={() =>
+            setSelectedFolder('all')
+          }
+        >
+          <Text
+            style={[
+              styles.folderChipText,
+              selectedFolder === 'all' &&
+                styles.selectedFolderChipText,
+            ]}
+          >
+            All
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.folderChip,
+            selectedFolder === 'unfiled' &&
+              styles.selectedFolderChip,
+          ]}
+          onPress={() =>
+            setSelectedFolder('unfiled')
+          }
+        >
+          <Text
+            style={[
+              styles.folderChipText,
+              selectedFolder === 'unfiled' &&
+                styles.selectedFolderChipText,
+            ]}
+          >
+            Unfiled
+          </Text>
+        </Pressable>
+
+        {folders.map((folder) => {
+          const isSelected =
+            selectedFolder === folder.id;
+
+          return (
+            <Pressable
+              key={folder.id}
+              style={[
+                styles.folderChip,
+                isSelected &&
+                  styles.selectedFolderChip,
+              ]}
+              onPress={() =>
+                setSelectedFolder(folder.id)
+              }
+            >
+              <Text
+                style={[
+                  styles.folderChipText,
+                  isSelected &&
+                    styles.selectedFolderChipText,
+                ]}
+              >
+                {folder.name}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
       <View style={{ marginBottom: 20 }}>
         <Button
           title="Manage Folders"
@@ -113,6 +295,16 @@ export default function StockpileScreen() {
           }
         />
       </View>
+
+      <View style={{ marginBottom: 10 }}>
+        <ActionButton
+          title="Export CSV"
+          icon="download-outline"
+          variant="secondary"
+          onPress={handleExport}
+        />
+      </View>
+  
 
     {/* Expiring items section */}
     {expiringItems.length > 0 && (
@@ -143,14 +335,13 @@ export default function StockpileScreen() {
     )}
 
   {/* Normal stockpile list */}
-    {items.length === 0 ? (
+    {filteredItems.length === 0 ? (
       <Text style={styles.empty}>
-        Your stockpile is empty.
-        Scan something to get started.
+        No products found.
       </Text>
     ) : (
       <FlatList
-        data={items}
+        data={filteredItems}
         keyExtractor={(item) =>
           item.id.toString()
         }
@@ -236,26 +427,70 @@ const styles = StyleSheet.create({
   },
 
   expiringSection: {
-  marginBottom: 25,
-  padding: 15,
-  borderWidth: 1,
-  borderColor: '#ddd',
-  borderRadius: 10,
-},
+    marginBottom: 25,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+  },
 
-expiringTitle: {
-  fontSize: 20,
-  fontWeight: 'bold',
-  marginBottom: 10,
-},
+  expiringTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
 
-expiringItem: {
-  paddingVertical: 8,
-  borderBottomWidth: 1,
-  borderBottomColor: '#eee',
-},
+  expiringItem: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
 
-expiringName: {
-  fontWeight: '600',
-},
+  expiringName: {
+    fontWeight: '600',
+  },
+
+  searchInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+
+  folderScroll: {
+    marginBottom: 15,
+    flexGrow: 0,
+  },
+
+  folderRow: {
+    gap: 8,
+    paddingRight: 20,
+  },
+
+  folderChip: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+
+  folderChipText: {
+    color: '#222',
+    fontSize: 14,
+  },
+
+  selectedFolderChip: {
+    backgroundColor: '#333',
+    borderColor: '#333',
+  },
+
+  selectedFolderChipText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+
 });

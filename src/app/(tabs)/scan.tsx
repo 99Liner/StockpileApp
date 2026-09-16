@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import {
+  useEffect,
+  useState,
+} from 'react';
 
 import {
   ActivityIndicator,
@@ -22,6 +25,11 @@ import { useSQLiteContext } from 'expo-sqlite';
 
 import type { ProductLookup } from '../../services/productApi';
 import lookupProduct from '../../services/productApi';
+
+type Folder = {
+  id: number;
+  name: string;
+};
 
 export default function ScanScreen() {
   const db = useSQLiteContext();
@@ -58,6 +66,29 @@ export default function ScanScreen() {
   const [manualSize, setManualSize] = useState('');
   const [manualUnit, setManualUnit] = useState('');
 
+  const [folders, setFolders] = useState<Folder[]>([]);
+
+  const [
+    selectedFolderId,
+    setSelectedFolderId,
+  ] = useState<number | null>(null);
+
+  async function loadFolders() {
+    const results =
+      await db.getAllAsync<Folder>(`
+        SELECT id, name
+        FROM folders
+        ORDER BY name COLLATE NOCASE
+      `);
+
+    setFolders(results);
+  }
+
+   useEffect(() => {
+    loadFolders();
+  }, []);
+
+  
   if (!permission) {
     return (
       <View style={styles.center}>
@@ -99,8 +130,7 @@ export default function ScanScreen() {
     console.log('Looking up:', scannedBarcode);
 
     try {
-      // STEP 1:
-      // Check our own SQLite database first.
+      // Check own SQLite database first.
       const localProduct =
         await db.getFirstAsync<{
           barcode: string;
@@ -109,6 +139,7 @@ export default function ScanScreen() {
           category: string | null;
           size_amount: number | null;
           size_unit: string | null;
+          folder_id: number | null;
         }>(
           `
           SELECT
@@ -117,7 +148,9 @@ export default function ScanScreen() {
             brand,
             category,
             size_amount,
-            size_unit
+            size_unit,
+            folder_id
+
           FROM products
           WHERE barcode = ?
           `,
@@ -150,6 +183,10 @@ export default function ScanScreen() {
         };
 
         setProduct(savedProduct);
+
+        setSelectedFolderId(
+          localProduct.folder_id
+        );
 
         return;
       }
@@ -241,21 +278,35 @@ export default function ScanScreen() {
             brand,
             category,
             size_amount,
-            size_unit
+            size_unit,
+            folder_id
           )
-          VALUES (?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
           `,
           barcode,
           product.name,
           product.brand,
           product.category,
           product.sizeAmount,
-          product.sizeUnit
+          product.sizeUnit,
+          selectedFolderId
         );
 
         savedProduct = {
           id: result.lastInsertRowId,
         };
+      }
+
+      else {
+        await db.runAsync(
+          `
+          UPDATE products
+          SET folder_id = ?
+          WHERE id = ?
+          `,
+          selectedFolderId,
+          savedProduct.id
+        );
       }
 
       const today =
@@ -297,7 +348,6 @@ export default function ScanScreen() {
         'PURCHASES IN DATABASE:',
         testPurchases
       );
-
 
       
       Alert.alert(
@@ -345,6 +395,8 @@ export default function ScanScreen() {
     setManualCategory('');
     setManualSize('');
     setManualUnit('');
+
+    setSelectedFolderId(null);
   }
 
   const regular =
@@ -503,20 +555,56 @@ function continueWithManualProduct() {
                   Math.max(1, current - 1)
                 )
               }
-            />
+          />
 
-            <Text style={styles.quantity}>
-              {quantity}
-            </Text>
+          <Text style={styles.label}>
+            Folder
+          </Text>
 
+          <View style={styles.folderOptions}>
             <Button
-              title="+"
+              title={
+                selectedFolderId === null
+                  ? '✓ Unfiled'
+                  : 'Unfiled'
+              }
               onPress={() =>
-                setQuantity((current) =>
-                  current + 1
-                )
+                setSelectedFolderId(null)
               }
             />
+
+            {folders.map((folder) => (
+              <View
+                key={folder.id}
+                style={styles.folderButton}
+              >
+                <Button
+                  title={
+                    selectedFolderId === folder.id
+                      ? `✓ ${folder.name}`
+                      : folder.name
+                  }
+                  onPress={() =>
+                    setSelectedFolderId(
+                      folder.id
+                    )
+                  }
+                />
+              </View>
+            ))}
+          </View>
+
+
+          <Text style={styles.quantity}>
+             {quantity}
+          </Text>
+
+          <Button
+            title="+"
+            onPress={() =>
+              setQuantity((current) => current + 1)
+              }
+          />
           </View>
 
           <Text style={styles.label}>
@@ -872,4 +960,14 @@ const styles = StyleSheet.create({
   notFoundMessage: {
     marginBottom: 20,
   },
+
+  folderOptions: {
+  marginBottom: 15,
+},
+
+folderButton: {
+  marginTop: 8,
+},
+
+
 });

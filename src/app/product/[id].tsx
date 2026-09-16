@@ -1,24 +1,28 @@
+import { Ionicons } from '@expo/vector-icons';
+import ActionButton from '../../components/ActionButton';
+
 import {
-    Alert,
-    Button,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Button,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 import {
-    useFocusEffect,
-    useLocalSearchParams,
-    useRouter,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
 } from 'expo-router';
 
 import { useSQLiteContext } from 'expo-sqlite';
 
 import {
-    useCallback,
-    useState,
+  useCallback,
+  useState,
 } from 'react';
 
 type Product = {
@@ -74,55 +78,64 @@ export default function ProductDetailScreen() {
     setSelectedFolderId,
   ] = useState<number | null>(null);
 
-  async function loadData() {
-    const foundProduct =
-      await db.getFirstAsync<Product>(
-        `
-        SELECT *
-        FROM products
-        WHERE id = ?
-        `,
-        productId
+  const loadData = useCallback(async () => {
+    try {
+      const foundProduct =
+        await db.getFirstAsync<Product>(
+          `
+          SELECT *
+          FROM products
+          WHERE id = ?
+          `,
+          productId
+        );
+
+      if (!foundProduct) {
+        setProduct(null);
+        return;
+      }
+
+      setProduct(foundProduct);
+      setName(foundProduct.name);
+      setBrand(foundProduct.brand ?? '');
+      setSelectedFolderId(
+        foundProduct.folder_id
       );
 
-    if (!foundProduct) {
-      return;
+      const folderRows =
+        await db.getAllAsync<Folder>(`
+          SELECT id, name
+          FROM folders
+          ORDER BY name COLLATE NOCASE
+        `);
+
+      setFolders(folderRows);
+
+      const purchaseRows =
+        await db.getAllAsync<Purchase>(
+          `
+          SELECT *
+          FROM purchases
+          WHERE product_id = ?
+          ORDER BY purchase_date DESC, id DESC
+          `,
+          productId
+        );
+
+      setPurchases(purchaseRows);
+    } catch (error) {
+      console.error(
+        'LOAD PRODUCT ERROR:',
+        error
+      );
     }
+  }, [db, productId]);
 
-    setProduct(foundProduct);
-
-    setName(foundProduct.name);
-    setBrand(foundProduct.brand ?? '');
-    setSelectedFolderId(foundProduct.folder_id);
-
-    const folderRows =
-      await db.getAllAsync<Folder>(`
-        SELECT id, name
-        FROM folders
-        ORDER BY name COLLATE NOCASE
-      `);
-
-    setFolders(folderRows);
-
-    const purchaseRows =
-      await db.getAllAsync<Purchase>(
-        `
-        SELECT *
-        FROM purchases
-        WHERE product_id = ?
-        ORDER BY purchase_date DESC, id DESC
-        `,
-        productId
-      );
-
-    setPurchases(purchaseRows);
-  }
-
-    useFocusEffect(
-        useCallback(() => {
-            loadData();
-        }, [productId])
-    );
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   async function saveProductInfo() {
     if (!name.trim()) {
@@ -259,28 +272,29 @@ export default function ProductDetailScreen() {
         UPC: {product.barcode}
       </Text>
 
-      <View style={{ marginTop: 15, marginBottom: 10 }}>
-        <Button
+      <View style={styles.actionRow}>
+        <ActionButton
           title="Use One"
+          icon="remove-circle-outline"
+          variant="secondary"
+          style={styles.actionButton}
           onPress={useOne}
         />
-      </View>
 
-      <View style={{ marginBottom: 20 }}>
-        <Button
-            title="Add Purchase"
-            onPress={() =>
+        <ActionButton
+          title="Restock"
+          icon="add-circle-outline"
+          style={styles.actionButton}
+          onPress={() =>
             router.push({
-                pathname:
-                '/add-purchase/[productId]',
-                params: {
-                productId:
-                    productId.toString(),
-                },
+              pathname: '/add-purchase/[productId]',
+              params: {
+                productId: productId.toString(),
+              },
             })
-            }
+          }
         />
-        </View>
+      </View>
 
       <Text style={styles.sectionTitle}>
         Product Information
@@ -306,43 +320,65 @@ export default function ProductDetailScreen() {
         onChangeText={setBrand}
       />
 
-      <Text style={styles.label}>
+      <Text style={styles.label}>e
         Folder
       </Text>
 
-      <View style={styles.folderOptions}>
-        <Button
-          title={
-          selectedFolderId === null
-            ? '✓ Unfiled'
-            : 'Unfiled'
-          }
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.folderRow}
+      >
+        <Pressable
+          style={[
+            styles.folderChip,
+            selectedFolderId === null &&
+              styles.selectedFolderChip,
+          ]}
           onPress={() =>
-          setSelectedFolderId(null)
-        }
-        />
-
-        {folders.map((folder) => (
-          <View
-            key={folder.id}
-            style={styles.folderButton}
+            setSelectedFolderId(null)
+          }
+        >
+          <Text
+            style={[
+              styles.folderChipText,
+              selectedFolderId === null &&
+                styles.selectedFolderChipText,
+            ]}
           >
-          <Button
-            title={
-            selectedFolderId === folder.id
-              ? `✓ ${folder.name}`
-              : folder.name
-            }
-            onPress={() =>
-              setSelectedFolderId(
-                folder.id
-              )
-            }
-          />
-          </View>
-        ))}
-    </View>
+            Unfiled
+          </Text>
+        </Pressable>
 
+        {folders.map((folder) => {
+          const selected =
+            selectedFolderId === folder.id;
+
+          return (
+            <Pressable
+              key={folder.id}
+              style={[
+                styles.folderChip,
+                selected &&
+                  styles.selectedFolderChip,
+              ]}
+              onPress={() =>
+                setSelectedFolderId(folder.id)
+              }
+            >
+              <Text
+                style={[
+                  styles.folderChipText,
+                  selected &&
+                    styles.selectedFolderChipText,
+                ]}
+              >
+                {folder.name}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       {product.size_amount !== null && (
         <Text style={styles.sizeText}>
@@ -351,8 +387,9 @@ export default function ProductDetailScreen() {
         </Text>
       )}
 
-      <Button
-        title="Save Product Info"
+      <ActionButton
+        title="Save Changes"
+        icon="save-outline"
         onPress={saveProductInfo}
       />
 
@@ -407,19 +444,37 @@ export default function ProductDetailScreen() {
             </Text>
           )}
 
-          <View style={{ marginTop: 12 }}>
-            <Button
-                title="Edit Purchase"
-                onPress={() =>
-                router.push({
-                    pathname: '/purchase/[id]',
-                    params: {
-                    id: purchase.id.toString(),
-                    },
-                })
-                }
-            />
+          <View style={styles.purchaseHeader}>
+            <View>
+              <Text style={styles.store}>
+                {purchase.store || 'Unknown Store'}
+              </Text>
+
+              {purchase.purchase_date && (
+                <Text>
+                  {purchase.purchase_date}
+                </Text>
+              )}
             </View>
+
+            <Pressable
+              style={styles.editIcon}
+              onPress={() =>
+                router.push({
+                  pathname: '/purchase/[id]',
+                  params: {
+                    id: purchase.id.toString(),
+                  },
+                })
+              }
+            >
+              <Ionicons
+                name="create-outline"
+                size={22}
+                color="#222"
+              />
+            </Pressable>
+          </View>
 
         </View>
       ))}
@@ -514,5 +569,55 @@ const styles = StyleSheet.create({
 
   deleteSection: {
     marginTop: 30,
+  },
+
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 15,
+    marginBottom: 25,
+  },
+
+  actionButton: {
+    flex: 1,
+  },
+
+  purchaseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+
+  editIcon: {
+    padding: 8,
+  },
+
+  folderRow: {
+    gap: 8,
+    paddingVertical: 8,
+    paddingRight: 20,
+  },
+
+  folderChip: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+
+  folderChipText: {
+    color: '#222',
+  },
+
+  selectedFolderChip: {
+    backgroundColor: '#333',
+    borderColor: '#333',
+  },
+
+  selectedFolderChipText: {
+    color: 'white',
+    fontWeight: '600',
   },
 });

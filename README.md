@@ -14,17 +14,16 @@ It is especially designed for tracking purchases over time, including regular pr
 
 # Why I Built This
 
-This project started as a personal tool for managing a household stockpile.
+This project started as a personal tool for managing my personal cuponing stockpile and compare prices overtime. 
 
 Traditional inventory apps often focus primarily on quantity. I wanted an application that also keeps track of:
 
 ```text
-Where I purchased something
 What the regular price was
 What I actually paid
 How much I saved
 What the price per unit was
-When I purchased it
+When/Where I purchased it
 When it expires
 How much I currently have
 ```
